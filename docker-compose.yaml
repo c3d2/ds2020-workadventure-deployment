@@ -1,51 +1,33 @@
 version: "3"
 services:
-  reverse-proxy:
-    image: traefik:v2.0
-    command:
-      - --api.insecure=true
-      - --providers.docker
-      - --entryPoints.web.address=:80
-      - --entryPoints.websecure.address=:443
-    ports:
-      - "80:80"
-      - "443:443"
-      # The Web UI (enabled by --api.insecure=true)
-      - "8080:8080"
-    depends_on:
-      - back
-      - front
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-
   front:
     image: thecodingmachine/nodejs:14
     environment:
-      DEBUG_MODE: "$DEBUG_MODE"
-      JITSI_URL: $JITSI_URL
+      DEBUG_MODE: 0
+      JITSI_URL: jitsi.live.datenspuren.de
       HOST: "0.0.0.0"
       NODE_ENV: development
-      API_URL: api.workadventure.localhost
+      API_URL: api.workadventure.live.datenspuren.de
       STARTUP_COMMAND_1: yarn install
-      TURN_SERVER: "turn:coturn.workadventu.re:443,turns:coturn.workadventu.re:443"
-      TURN_USER: workadventure
-      TURN_PASSWORD: WorkAdventure123
-    command: yarn run start
+    networks:
+      - traefik
+    command: webpack-dev-server --config webpack.prod.js --no-inline
+    #command: yarn run start
     volumes:
       - ./front:/usr/src/app
     labels:
-      - "traefik.http.routers.front.rule=Host(`play.workadventure.localhost`)"
-      - "traefik.http.routers.front.entryPoints=web,traefik"
+      - "traefik.docker.network=traefik"
       - "traefik.http.services.front.loadbalancer.server.port=8080"
-      - "traefik.http.routers.front-ssl.rule=Host(`play.workadventure.localhost`)"
-      - "traefik.http.routers.front-ssl.entryPoints=websecure"
-      - "traefik.http.routers.front-ssl.tls=true"
-      - "traefik.http.routers.front-ssl.service=front"
+      - "traefik.http.routers.front.rule=Host(`play.workadventure.live.datenspuren.de`)"
+      - "traefik.http.routers.front.entryPoints=websecure"
+      - "traefik.http.routers.front.tls=true"
+      - "traefik.http.routers.front.tls.certresolver=le"
+      - "traefik.http.routers.front.service=front"
 
   maps:
     image: thecodingmachine/nodejs:12-apache
     environment:
-      DEBUG_MODE: "$DEBUG_MODE"
+      DEBUG_MODE: 0
       HOST: "0.0.0.0"
       NODE_ENV: development
       #APACHE_DOCUMENT_ROOT: dist/
@@ -54,50 +36,60 @@ services:
       STARTUP_COMMAND_0: sudo a2enmod headers
       STARTUP_COMMAND_1: yarn install
       STARTUP_COMMAND_2: yarn run dev &
+    networks:
+      - traefik
     volumes:
       - ./maps:/var/www/html
     labels:
-      - "traefik.http.routers.maps.rule=Host(`maps.workadventure.localhost`)"
-      - "traefik.http.routers.maps.entryPoints=web,traefik"
+      - "traefik.docker.network=traefik"
       - "traefik.http.services.maps.loadbalancer.server.port=80"
-      - "traefik.http.routers.maps-ssl.rule=Host(`maps.workadventure.localhost`)"
-      - "traefik.http.routers.maps-ssl.entryPoints=websecure"
-      - "traefik.http.routers.maps-ssl.tls=true"
-      - "traefik.http.routers.maps-ssl.service=maps"
+      - "traefik.http.routers.maps.rule=Host(`maps.workadventure.live.datenspuren.de`)"
+      - "traefik.http.routers.maps.entryPoints=websecure"
+      - "traefik.http.routers.maps.tls=true"
+      - "traefik.http.routers.maps.tls.certresolver=le"
+      - "traefik.http.routers.maps.service=maps"
 
   back:
     image: thecodingmachine/nodejs:12
+    build: back/
+    networks:
+      - traefik
     command: yarn dev
-    #command: yarn run profile
-    environment:
-      STARTUP_COMMAND_1: yarn install
-      SECRET_KEY: yourSecretKey
-      ALLOW_ARTILLERY: "true"
+    # environment:
+    #  SECRET_KEY: ... see .env
     volumes:
       - ./back:/usr/src/app
     labels:
-      - "traefik.http.routers.back.rule=Host(`api.workadventure.localhost`)"
-      - "traefik.http.routers.back.entryPoints=web"
+      - "traefik.docker.network=traefik"
       - "traefik.http.services.back.loadbalancer.server.port=8080"
-      - "traefik.http.routers.back-ssl.rule=Host(`api.workadventure.localhost`)"
-      - "traefik.http.routers.back-ssl.entryPoints=websecure"
-      - "traefik.http.routers.back-ssl.tls=true"
-      - "traefik.http.routers.back-ssl.service=back"
-
+      - "traefik.http.routers.back.rule=Host(`api.workadventure.live.datenspuren.de`)"
+      - "traefik.http.routers.back.entryPoints=websecure"
+      - "traefik.http.routers.back.tls=true"
+      - "traefik.http.routers.back.tls.certresolver=le"
+      - "traefik.http.routers.back.service=back"
+      - "traefik.http.routers.back.middlewares=api"
+      - "traefik.http.middlewares.api.headers.customResponseHeaders.Access-Control-Allow-Origin=https://play.workadventure.live.datenspuren.de"
 
   website:
     image: thecodingmachine/nodejs:12-apache
     environment:
-      STARTUP_COMMAND_1: npm install
       STARTUP_COMMAND_2: npm run watch &
       APACHE_DOCUMENT_ROOT: dist/
+    networks:
+      - traefik
+    ports:
+      - "9080:80"
     volumes:
       - ./website:/var/www/html
     labels:
-      - "traefik.http.routers.website.rule=Host(`workadventure.localhost`)"
-      - "traefik.http.routers.website.entryPoints=web"
+      - "traefik.docker.network=traefik"
       - "traefik.http.services.website.loadbalancer.server.port=80"
-      - "traefik.http.routers.website-ssl.rule=Host(`workadventure.localhost`)"
-      - "traefik.http.routers.website-ssl.entryPoints=websecure"
-      - "traefik.http.routers.website-ssl.tls=true"
-      - "traefik.http.routers.website-ssl.service=website"
+      - "traefik.http.routers.website.rule=Host(`workadventure.live.datenspuren.de`)"
+      - "traefik.http.routers.website.entryPoints=websecure"
+      - "traefik.http.routers.website.tls=true"
+      - "traefik.http.routers.website.tls.certresolver=le"
+      - "traefik.http.routers.website.service=website"
+
+networks:
+  traefik:
+    external: true
