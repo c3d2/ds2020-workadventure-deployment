@@ -54,7 +54,8 @@ services:
     build: back/
     networks:
       - traefik
-    command: yarn dev
+    #command: yarn dev
+    command: node ./dist/server.js
     # environment:
     #  SECRET_KEY: ... see .env
     volumes:
